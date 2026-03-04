@@ -167,16 +167,16 @@ diy_vr_get_visibility_mask(struct xrt_device *xdev,
 	return XRT_SUCCESS;
 }
 
-
-void config_hmd_base(struct diy_vr *hmd)
 /*
  * Performs initial config of the base aspect of the hmd
  */
+void
+config_hmd_base(struct diy_vr *hmd)
 {
 	// This list should be ordered, most preferred first.
 	size_t idx = 0;
-	hmd->base.hmd->blend_modes[idx++] = XRT_BLEND_MODE_OPAQUE;
-	hmd->base.hmd->blend_mode_count = idx;
+	hmd->base.hmd->blend_modes[idx++] = XRT_BLEND_MODE_OPAQUE;  // TODO What is this?
+	hmd->base.hmd->blend_mode_count = idx;						// Only applied one blend mode
 
 	hmd->base.update_inputs = diy_vr_update_inputs;
 	hmd->base.get_tracked_pose = diy_vr_get_tracked_pose;
@@ -185,10 +185,12 @@ void config_hmd_base(struct diy_vr *hmd)
 	hmd->base.destroy = diy_vr_destroy;
 }
 
-void config_hmd_inputs(struct diy_vr *hmd)
 /*
- *
+ * Init of inputs for HMD
+ * TODO - See how this integrates with the other helper functions of main. i.e., how much does the order matter.
  */
+void
+config_hmd_inputs(struct diy_vr *hmd)
 {
 	hmd->base.name = XRT_DEVICE_GENERIC_HMD;
 	hmd->base.device_type = XRT_DEVICE_TYPE_HMD;
@@ -197,10 +199,12 @@ void config_hmd_inputs(struct diy_vr *hmd)
 	hmd->base.supported.position_tracking = true;
 }
 
-int check_fovs(struct diy_vr *hmd, const double hCOP, const double vCOP, const double hFOV, const double vFOV)
 /*
  *  Check the FOVs to make sure that the math works to allow for half-FOVs
  */
+int
+check_fovs(struct diy_vr *hmd, const double hCOP, const double vCOP, const double hFOV, const double vFOV)
+
 {
 	int compute_outcome;
 	if (
@@ -275,6 +279,10 @@ config_hmd_display(struct diy_vr *hmd)
 	return CONFIG_SUCCESS;
 }
 
+/*
+*	TODO - Complete refactor of the function
+* 		(Breaking it up into bite size pieces and figuring out what it all means and does)
+*/
 struct xrt_device *
 diy_vr_create(void)
 {
@@ -284,49 +292,38 @@ diy_vr_create(void)
 
 	struct diy_vr *hmd = U_DEVICE_ALLOCATE(struct diy_vr, flags, 1, 0);
 
-	// Perform initial population of hmd->base.hmd... values
-	// Blending, inputs, poses, visibility mask & destroy function.
-	config_hmd_base(hmd);
-
-	// Distortion information, fills in xdev->compute_distortion().
-	u_distortion_mesh_set_none(&hmd->base);
-
+	config_hmd_base(hmd); 					// init HMD blending, inputs, poses, visibility mask, destroy func
+	u_distortion_mesh_set_none(&hmd->base); // Distortion information, fills in xdev->compute_distortion().
 	// populate this with something more complex if required
 	// hmd->base.compute_distortion = diy_vr_compute_distortion;
-
 	hmd->pose = (struct xrt_pose)XRT_POSE_IDENTITY;
 	hmd->log_level = debug_get_log_option_diy_vr_log();
 
 	// Print name.
-	snprintf(hmd->base.str, XRT_DEVICE_NAME_LEN, "Sample HMD");
-	snprintf(hmd->base.serial, XRT_DEVICE_NAME_LEN, "Sample HMD S/N");
+	snprintf(hmd->base.str, XRT_DEVICE_NAME_LEN, "DIY HMD");
+	snprintf(hmd->base.serial, XRT_DEVICE_NAME_LEN, "DIY HMD");
 
-	m_relation_history_create(&hmd->relation_hist);
+	m_relation_history_create(&hmd->relation_hist);		// TODO COMMENT: some mutex stuff going on here
+	config_hmd_inputs(hmd);  							// TODO COMMENT
 
-	config_hmd_inputs(hmd);  // TODO COMMENT
-
-	if (config_hmd_display(hmd) == CONFIG_FAILURE) // Config display, FOV calculations can fail. Ensure correct config
-	{
+	// Config display, FOV calculations can fail. Ensure correct config
+	if (config_hmd_display(hmd) == CONFIG_FAILURE)	{
 		diy_vr_destroy(&hmd->base);
 		return NULL;
 	}
 
-
-
-	// Distortion information, fills in xdev->compute_distortion().
-	u_distortion_mesh_set_none(&hmd->base);
+	u_distortion_mesh_set_none(&hmd->base); // Distortion information, fills in xdev->compute_distortion().
 
 	// Just put an initial identity value in the tracker
 	struct xrt_space_relation identity = XRT_SPACE_RELATION_ZERO;
 	identity.relation_flags = (enum xrt_space_relation_flags)(XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT |
 	                                                          XRT_SPACE_RELATION_ORIENTATION_VALID_BIT);
 	uint64_t now = os_monotonic_get_ns();
-	m_relation_history_push(hmd->relation_hist, &identity, now);
+	m_relation_history_push(hmd->relation_hist, &identity, now); // TODO COMMENT: some mutex stuff going on here
 
 	// Setup variable tracker: Optional but useful for debugging
 	u_var_add_root(hmd, "Sample HMD", true);
 	u_var_add_log_level(hmd, &hmd->log_level, "log_level");
-
 
 	return &hmd->base;
 }
