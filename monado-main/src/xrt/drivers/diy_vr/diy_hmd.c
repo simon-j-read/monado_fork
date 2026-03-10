@@ -12,6 +12,9 @@
  * @ingroup drv_diy_vr
  */
 
+// TODO - add code in the 'targets/common' area
+#include "read_config.h"
+
 #include "os/os_time.h"
 #include "xrt/xrt_defines.h"
 #include "xrt/xrt_device.h"
@@ -167,17 +170,28 @@ diy_vr_get_visibility_mask(struct xrt_device *xdev,
 	return XRT_SUCCESS;
 }
 
-/*
- * Performs initial config of the base aspect of the hmd
- */
+// Configure the blend modes for the HMD, currently just have one.
+// But pretty sure you can have more, based off the comment provided by Monado's authors.
 void
-config_hmd_base(struct diy_vr *hmd)
-{
+config_hmd_blend_modes(struct diy_vr *hmd) {
+	/*
+	The possible blend modes are specified in xrt_defines.h:
+		XRT_BLEND_MODE_OPAQUE		- Typical for VR experiences.
+		XRT_BLEND_MODE_ADDITIVE		- Typical for an AR experience on a see-through headset with an additive display,
+		XRT_BLEND_MODE_ALPHA_BLEND	- Typical for an AR experience on a phone or headset that supports video passthrough.
+	*/
 	// This list should be ordered, most preferred first.
 	size_t idx = 0;
 	hmd->base.hmd->blend_modes[idx++] = XRT_BLEND_MODE_OPAQUE;  // TODO What is this?
 	hmd->base.hmd->blend_mode_count = idx;						// Only applied one blend mode
+}
 
+// Configure the "methods" of the inherited hmd->base.
+// This is done by loading the functions defined above into the various methods.
+void
+config_hmd_functions(struct diy_vr *hmd)
+{
+	// Assigning the HMD specific functions
 	hmd->base.update_inputs = diy_vr_update_inputs;
 	hmd->base.get_tracked_pose = diy_vr_get_tracked_pose;
 	hmd->base.get_view_poses = diy_vr_get_view_poses;
@@ -206,7 +220,7 @@ int
 check_fovs(struct diy_vr *hmd, const double hCOP, const double vCOP, const double hFOV, const double vFOV)
 
 {
-	int compute_outcome;
+	int compute_outcome = CONFIG_SUCCESS;
 	if (
 	/* right eye */
 	!math_compute_fovs(1, hCOP, hFOV, 1, vCOP, vFOV, &hmd->base.hmd->distortion.fov[1]) ||
@@ -219,9 +233,6 @@ check_fovs(struct diy_vr *hmd, const double hCOP, const double vCOP, const doubl
 		// If those failed, it means our math was impossible.
 		compute_outcome = CONFIG_FAILURE;
 	}
-	else {
-		compute_outcome = CONFIG_SUCCESS;
-	}
 
 	return compute_outcome;
 }
@@ -232,52 +243,61 @@ check_fovs(struct diy_vr *hmd, const double hCOP, const double vCOP, const doubl
  * Checking that the half-FOVs work
  */
 int
-config_hmd_display(struct diy_vr *hmd)
+config_hmd_display(struct diy_vr *hmd, struct diy_config_data *cd)
 {
-	// TODO
-	// iterate through display config settings
-	// assign values based off what is in JSON config file
-
-	// Things to put in JSON config
-	const float display_refresh_hz = 60.0;	// Refresh rate of the display in the HMD
-	const double hFOV_deg = 90;				// Field of views
-	const double vFOV_deg = 96.73;			//
-	const double hCOP = 0.529;				// Center of projections
-	const double vCOP = 0.5;				//
-	const int panel_w = 1080;
-	const int panel_h = 1200;
-
 	// Assign refresh rate (nanoseconds) (1/Hz = seconds)
-	hmd->base.hmd->screens[0].nominal_frame_interval_ns = time_s_to_ns(1.0f / display_refresh_hz);
+	hmd->base.hmd->screens[0].nominal_frame_interval_ns = time_s_to_ns(1.0f / cd.display_refresh_hz);
 
-	const double hFOV_rad = DEG_TO_RAD(hFOV_deg); // math_computer_fovs needs it in radians
-	const double vFOV_rad = DEG_TO_RAD(vFOV_deg); // from m_api.h
+	const double hFOV_rad = DEG_TO_RAD(cd.hFOV_deg); // math_computer_fovs needs it in radians
+	const double vFOV_rad = DEG_TO_RAD(cd.vFOV_deg); // from m_api.h
 
-	 if (!check_fovs(hmd, hCOP, hFOV_rad, vCOP, vFOV_rad)) {
+	 if (!check_fovs(hmd, cd.hCOP, cd.hFOV_rad, cd.vCOP, cd.vFOV_rad)) {
 		 HMD_ERROR(hmd, "Failed to setup basic device info: fov calculations");
 	 	return CONFIG_FAILURE; // fov math did not compute correctly
 	 }
 
-	hmd->base.hmd->screens[0].w_pixels = panel_w * 2;	// Have 2 panels, but treated as a single screen by Monado
-	hmd->base.hmd->screens[0].h_pixels = panel_h;		// Single "screen" (always the case), hence [0] index.
+	hmd->base.hmd->screens[0].w_pixels = cd.panel_w * 2;	// Have 2 panels, but treated as a single screen by Monado
+	hmd->base.hmd->screens[0].h_pixels = cd.panel_h;		// Single "screen" (always the case), hence [0] index.
 
 	// Left, Right
 	for (uint8_t eye = 0; eye < 2; ++eye) {
-		hmd->base.hmd->views[eye].display.w_pixels = panel_w;	// Display
-		hmd->base.hmd->views[eye].display.h_pixels = panel_h;
+		hmd->base.hmd->views[eye].display.w_pixels = cd.panel_w;	// Display
+		hmd->base.hmd->views[eye].display.h_pixels = cd.panel_h;
 
 		hmd->base.hmd->views[eye].viewport.y_pixels = 0;		// Viewport
-		hmd->base.hmd->views[eye].viewport.w_pixels = panel_w;
-		hmd->base.hmd->views[eye].viewport.h_pixels = panel_h;
+		hmd->base.hmd->views[eye].viewport.w_pixels = cd.panel_w;
+		hmd->base.hmd->views[eye].viewport.h_pixels = cd.panel_h;
 		// if rotation is not identity, the dimensions can get more complex.
 		hmd->base.hmd->views[eye].rot = u_device_rotation_ident;
 	}
 	// left eye starts at x=0, right eye starts at x=panel_width
 	hmd->base.hmd->views[0].viewport.x_pixels = 0;
-	hmd->base.hmd->views[1].viewport.x_pixels = panel_w;
+	hmd->base.hmd->views[1].viewport.x_pixels = cd.panel_w;
 
 	return CONFIG_SUCCESS;
 }
+
+
+/*
+ * m_relation_history contains a buffer of previous poses for the HMD.
+ * Here we are giving the buffer an update, by pushing an 'identity' pose onto the buffer.
+ * I imagine this gives the HMD a clean slate at start up, may need to play around with this.
+ */
+void
+config_hmd_relation_hist(struct diy_vr *hmd)
+{
+	// hmd->relation_hist already initialised in main, unsure if i can put it in this function or if it needs to be
+	// called eariler in main.
+	// Just put an initial identity value in the tracker (tracker being hmd->relation_hist)
+	struct xrt_space_relation identity = XRT_SPACE_RELATION_ZERO;
+	identity.relation_flags = (enum xrt_space_relation_flags)(XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT |
+															  XRT_SPACE_RELATION_ORIENTATION_VALID_BIT);
+
+	uint64_t now = os_monotonic_get_ns();							// Pushing to buffer requires a timestamp
+	m_relation_history_push(hmd->relation_hist, &identity, now);	// Pushing identity onto the HMD's pose history buffer
+
+}
+
 
 /*
 *	TODO - Complete refactor of the function
@@ -291,35 +311,35 @@ diy_vr_create(void)
 	    (enum u_device_alloc_flags)(U_DEVICE_ALLOC_HMD | U_DEVICE_ALLOC_TRACKING_NONE);
 
 	struct diy_vr *hmd = U_DEVICE_ALLOCATE(struct diy_vr, flags, 1, 0);
+	hmd->log_level = debug_get_log_option_diy_vr_log();
 
-	config_hmd_base(hmd); 					// init HMD blending, inputs, poses, visibility mask, destroy func
+	config_hmd_blend_modes(hmd);			// Placing Opaque blend mode in.
+	config_hmd_functions(hmd); 				// Assigning custom functions for inherited HMD->base
 	u_distortion_mesh_set_none(&hmd->base); // Distortion information, fills in xdev->compute_distortion().
 	// populate this with something more complex if required
 	// hmd->base.compute_distortion = diy_vr_compute_distortion;
 	hmd->pose = (struct xrt_pose)XRT_POSE_IDENTITY;
-	hmd->log_level = debug_get_log_option_diy_vr_log();
+	
+	// Load config data (saves having to rebuild the project everytime we alter the HMD).
+	struct diy_config_data *config_data;
+	const char *file_path = "/home/simon/Documents/XR/monado_fork/monado-main/src/xrt/drivers/diy_vr/config.json"; // TODO make this adaptable.
+	const cJSON *config_json = read_config_file(file_path); // Interpret file into a JSON format
+	extract_config_data(config_data, config_json);			
 
-	// Print name.
-	snprintf(hmd->base.str, XRT_DEVICE_NAME_LEN, "DIY HMD");
-	snprintf(hmd->base.serial, XRT_DEVICE_NAME_LEN, "DIY HMD");
+	snprintf(hmd->base.str, XRT_DEVICE_NAME_LEN, config_data.name);	// Assigning names to base.str & base.serial
+	snprintf(hmd->base.serial, XRT_DEVICE_NAME_LEN, config_data.serial);	// TODO May need to configure base.str to be EDID for compositor
 
-	m_relation_history_create(&hmd->relation_hist);		// TODO COMMENT: some mutex stuff going on here
+	m_relation_history_create(&hmd->relation_hist);		// Enables history of poses of hmd, where has the hmd been in space.
 	config_hmd_inputs(hmd);  							// TODO COMMENT
 
-	// Config display, FOV calculations can fail. Ensure correct config
-	if (config_hmd_display(hmd) == CONFIG_FAILURE)	{
+	// Run config display, FOV calculations can fail. Ensure correct config
+	if (config_hmd_display(hmd, config_data) == CONFIG_FAILURE)	{
 		diy_vr_destroy(&hmd->base);
 		return NULL;
 	}
 
 	u_distortion_mesh_set_none(&hmd->base); // Distortion information, fills in xdev->compute_distortion().
-
-	// Just put an initial identity value in the tracker
-	struct xrt_space_relation identity = XRT_SPACE_RELATION_ZERO;
-	identity.relation_flags = (enum xrt_space_relation_flags)(XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT |
-	                                                          XRT_SPACE_RELATION_ORIENTATION_VALID_BIT);
-	uint64_t now = os_monotonic_get_ns();
-	m_relation_history_push(hmd->relation_hist, &identity, now); // TODO COMMENT: some mutex stuff going on here
+	config_hmd_relation_hist(hmd);			// Config the already initialised HMD pose history buffer.
 
 	// Setup variable tracker: Optional but useful for debugging
 	u_var_add_root(hmd, "Sample HMD", true);

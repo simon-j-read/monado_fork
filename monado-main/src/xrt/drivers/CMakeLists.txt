@@ -635,6 +635,28 @@ if(XRT_BUILD_DRIVER_SOLARXR)
 	list(APPEND ENABLED_DRIVERS solarxr)
 endif()
 
+if (XRT_BUILD_DRIVER_DIY)
+	add_library(
+			drv_diy_vr STATIC
+			diy_vr/diy_hmd.c
+			diy_vr/diy_prober.c
+			diy_vr/diy_interface.h
+			diy_vr/read_config.c
+			diy_vr/read_config.h
+			diy_vr/diy_hmd.c
+	)
+	target_link_libraries(
+			drv_diy_vr PRIVATE
+			aux_os
+			aux_util
+			aux_math
+			xrt-external-cjson
+			xrt-interfaces
+	)
+	list(APPEND ENABLED_DRIVERS diy_vr)
+endif ()
+
+
 if(XRT_BUILD_SAMPLES)
 	# We build the sample driver to make sure it stays valid,
 	# but it never gets linked into a final target.

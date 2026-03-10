@@ -1,4 +1,6 @@
 {
+  "name" : "DIY HMD",
+  "serial" : "DIY HMD SERIAL",
   "display_refresh_hz": 60.0,
   "hFOV_deg": 90,
   "vFOV_deg": 96.73,
