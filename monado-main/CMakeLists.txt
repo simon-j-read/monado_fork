@@ -487,6 +487,7 @@ list(
 	"XREAL_AIR"
 	"STEAMVR_LIGHTHOUSE"
 	"SOLARXR"
+	"DIY_VR"
 	)
 
 # Package name needs to be known by the native code itself.
@@ -701,6 +702,7 @@ message(STATUS "#    DRIVER_ARDUINO:              ${XRT_BUILD_DRIVER_ARDUINO}")
 message(STATUS "#    DRIVER_BLUBUR_S1:            ${XRT_BUILD_DRIVER_BLUBUR_S1}")
 message(STATUS "#    DRIVER_DAYDREAM:             ${XRT_BUILD_DRIVER_DAYDREAM}")
 message(STATUS "#    DRIVER_DEPTHAI:              ${XRT_BUILD_DRIVER_DEPTHAI}")
+message(STATUS "#    DRIVER_DIY_VR:               ${XRT_BUILD_DRIVER_DIY_VR}")
 message(STATUS "#    DRIVER_EUROC:                ${XRT_BUILD_DRIVER_EUROC}")
 message(STATUS "#    DRIVER_HANDTRACKING:         ${XRT_BUILD_DRIVER_HANDTRACKING}")
 message(STATUS "#    DRIVER_HDK:                  ${XRT_BUILD_DRIVER_HDK}")

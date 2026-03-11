@@ -17,7 +17,8 @@ set(XR_API_MAJOR "1")
 
 if(APPLE)
 	# Needed to make a dynlib.
-	add_library(${RUNTIME_TARGET} SHARED target.c)
+	add_library(${RUNTIME_TARGET} SHARED target.c
+			../../drivers/diy_vr/diy_hmd.c)
 else()
 	add_library(${RUNTIME_TARGET} MODULE target.c libopenxr.def)
 endif()

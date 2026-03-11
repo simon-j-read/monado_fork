@@ -644,6 +644,8 @@ if (XRT_BUILD_DRIVER_DIY)
 			diy_vr/read_config.c
 			diy_vr/read_config.h
 			diy_vr/diy_hmd.c
+			diy_vr/diy_hmd.c
+			diy_vr/diy_hmd.c
 	)
 	target_link_libraries(
 			drv_diy_vr PRIVATE
