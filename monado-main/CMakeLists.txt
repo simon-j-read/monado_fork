@@ -371,6 +371,7 @@ option_with_deps(XRT_BUILD_DRIVER_XREAL_AIR "Enable Xreal Air HMD driver" DEPEND
 option_with_deps(XRT_BUILD_DRIVER_SIMULAVR "Enable simula driver" DEPENDS XRT_HAVE_REALSENSE)
 option_with_deps(XRT_BUILD_DRIVER_SOLARXR "Enable SolarXR driver" DEPENDS XRT_HAVE_LINUX XRT_MODULE_IPC)
 option(XRT_BUILD_DRIVER_SIMULATED "Enable simulated driver" ON)
+option(XRT_BUILD_DRIVER_DIY_VR "Enabled DIY VR driver" ON)
 
 option(XRT_BUILD_SAMPLES "Enable compiling sample code implementations that will not be linked into any final targets" ON)
 set(XRT_IPC_MSG_SOCK_FILENAME monado_comp_ipc CACHE STRING "Service socket filename")
@@ -453,6 +454,7 @@ list(
 	"ARDUINO"
 	"BLUBUR_S1"
 	"DAYDREAM"
+	"DIY_VR"
 	"SIMULATED"
 	"HANDTRACKING"
 	"HDK"
@@ -487,7 +489,6 @@ list(
 	"XREAL_AIR"
 	"STEAMVR_LIGHTHOUSE"
 	"SOLARXR"
-	"DIY_VR"
 	)
 
 # Package name needs to be known by the native code itself.

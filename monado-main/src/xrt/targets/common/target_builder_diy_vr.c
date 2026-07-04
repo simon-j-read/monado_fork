@@ -16,7 +16,7 @@
 
 #include "target_builder_interface.h"
 
-#include "qwerty/qwerty_interface.h"
+#include "diy_vr/diy_interface.h"
 
 #include <assert.h>
 
@@ -29,7 +29,7 @@
 DEBUG_GET_ONCE_LOG_OPTION(diy_vr_log, "DIY_VR_LOG", U_LOGGING_INFO)
 
 // Driver disabled by default for being experimental
-// DEBUG_GET_ONCE_BOOL_OPTION(enable_diy_vr, "DIY_VR_ENABLE", false)
+DEBUG_GET_ONCE_BOOL_OPTION(enable_diy_vr, "DIY_VR_ENABLE", false)
 
 
 /*
@@ -79,9 +79,9 @@ qwerty_open_system_impl(struct xrt_builder *xb,
 	struct xrt_device *head = NULL;
 	struct xrt_device *left = NULL;
 	struct xrt_device *right = NULL;
-	enum u_logging_level log_level = debug_get_log_option_qwerty_log();
+	enum u_logging_level log_level = debug_get_log_option_diy_vr_log();
 
-	xrt_result_t xret = qwerty_create_devices(log_level, &head, &left, &right);
+	xrt_result_t xret = diy_vr_create();
 	if (xret != XRT_SUCCESS) {
 		return xret;
 	}
@@ -117,7 +117,7 @@ diy_vr_destroy(struct xrt_builder *xb)
  */
 
 struct xrt_builder *
-t_builder_qwerty_create(void)
+t_builder_diy_vr_create(void)
 {
 	struct u_builder *ub = U_TYPED_CALLOC(struct u_builder);
 

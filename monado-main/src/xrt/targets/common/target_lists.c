@@ -112,6 +112,11 @@
 #endif
 
 
+#ifdef XRT_BUILD_DRIVER_DIY_VR
+#include "diy_vr/diy_interface.h"
+#endif
+
+
 /*!
  * Builders
  */
@@ -167,6 +172,10 @@ xrt_builder_create_func_t target_builder_list[] = {
 #ifdef XRT_BUILD_DRIVER_XREAL_AIR
     xreal_air_builder_create,
 #endif // T_BUILDER_XREAL_AIR
+
+#ifdef T_BUILDER_DIY_VR // High up to override any real hardware.
+    t_builder_diy_vr_create,
+#endif // T_BUILDER_DIY_VR
 
 #ifdef T_BUILDER_LEGACY
     t_builder_legacy_create,

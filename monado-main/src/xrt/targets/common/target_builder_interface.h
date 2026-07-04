@@ -19,6 +19,10 @@
 // Always enabled.
 #define T_BUILDER_LEGACY
 
+#if defined(XRT_BUILD_DRIVER_DIY_VR) || defined(XRT_DOXYGEN)
+#define T_BUILDER_DIY_VR
+#endif
+
 #if defined(XRT_BUILD_DRIVER_SURVIVE) || defined(XRT_BUILD_DRIVER_VIVE) || defined(XRT_DOXYGEN)
 #define T_BUILDER_LIGHTHOUSE
 #endif
@@ -76,6 +80,14 @@
  */
 struct xrt_builder *
 t_builder_legacy_create(void);
+#endif
+
+#ifdef T_BUILDER_DIY_VR
+/*!
+ * Builder used for diy vr headset
+ */
+struct xrt_builder *
+t_builder_diy_vr_create(void);
 #endif
 
 #ifdef T_BUILDER_STEAMVR
