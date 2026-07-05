@@ -11,7 +11,7 @@
 
 #include "util/u_misc.h"
 
-#include "diy_vr_interface.h"
+#include "diy_interface.h"
 
 
 /*!

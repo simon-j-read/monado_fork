@@ -68,7 +68,7 @@ diy_vr_estimate_system(struct xrt_builder *xb,
 }
 
 static xrt_result_t
-qwerty_open_system_impl(struct xrt_builder *xb,
+diy_vr_open_system_impl(struct xrt_builder *xb,
                         cJSON *config,
                         struct xrt_prober *xp,
                         struct xrt_tracking_origin *origin,
@@ -76,15 +76,15 @@ qwerty_open_system_impl(struct xrt_builder *xb,
                         struct xrt_frame_context *xfctx,
                         struct u_builder_roles_helper *ubrh)
 {
-	struct xrt_device *head = NULL;
+	struct xrt_device *head = diy_vr_create();
 	struct xrt_device *left = NULL;
 	struct xrt_device *right = NULL;
 	enum u_logging_level log_level = debug_get_log_option_diy_vr_log();
 
-	xrt_result_t xret = diy_vr_create();
-	if (xret != XRT_SUCCESS) {
-		return xret;
-	}
+	// xrt_result_t xret = qwerty_create_devices(log_level, &head, &left, &right);;
+	// if (xret != XRT_SUCCESS) {
+	// 	return xret;
+	// }
 
 	// Add to device list.
 	xsysd->xdevs[xsysd->xdev_count++] = head;
@@ -132,7 +132,7 @@ t_builder_diy_vr_create(void)
 	ub->base.exclude_from_automatic_discovery = !debug_get_bool_option_enable_diy_vr();
 
 	// u_builder fields.
-	ub->open_system_static_roles = qwerty_open_system_impl;
+	ub->open_system_static_roles = diy_vr_open_system_impl;
 
 	return &ub->base;
 }

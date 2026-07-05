@@ -35,8 +35,8 @@
 
 #include <stdio.h>
 
-#define CONFIG_SUCCESS 1;
-#define CONFIG_FAILURE 0;
+#define CONFIG_SUCCESS 1
+#define CONFIG_FAILURE 0
 
 
 /*
@@ -246,33 +246,33 @@ int
 config_hmd_display(struct diy_vr *hmd, struct diy_config_data *cd)
 {
 	// Assign refresh rate (nanoseconds) (1/Hz = seconds)
-	hmd->base.hmd->screens[0].nominal_frame_interval_ns = time_s_to_ns(1.0f / cd.display_refresh_hz);
+	hmd->base.hmd->screens[0].nominal_frame_interval_ns = time_s_to_ns(1.0f / cd->display_refresh_hz);
 
-	const double hFOV_rad = DEG_TO_RAD(cd.hFOV_deg); // math_computer_fovs needs it in radians
-	const double vFOV_rad = DEG_TO_RAD(cd.vFOV_deg); // from m_api.h
+	const double hFOV_rad = DEG_TO_RAD(cd->hFOV_deg); // math_computer_fovs needs it in radians
+	const double vFOV_rad = DEG_TO_RAD(cd->vFOV_deg); // from m_api.h
 
-	 if (!check_fovs(hmd, cd.hCOP, cd.hFOV_rad, cd.vCOP, cd.vFOV_rad)) {
+	 if (!check_fovs(hmd, cd->hCOP, hFOV_rad, cd->vCOP, vFOV_rad)) {
 		 HMD_ERROR(hmd, "Failed to setup basic device info: fov calculations");
 	 	return CONFIG_FAILURE; // fov math did not compute correctly
 	 }
 
-	hmd->base.hmd->screens[0].w_pixels = cd.panel_w * 2;	// Have 2 panels, but treated as a single screen by Monado
-	hmd->base.hmd->screens[0].h_pixels = cd.panel_h;		// Single "screen" (always the case), hence [0] index.
+	hmd->base.hmd->screens[0].w_pixels = cd->panel_w * 2;	// Have 2 panels, but treated as a single screen by Monado
+	hmd->base.hmd->screens[0].h_pixels = cd->panel_h;		// Single "screen" (always the case), hence [0] index.
 
 	// Left, Right
 	for (uint8_t eye = 0; eye < 2; ++eye) {
-		hmd->base.hmd->views[eye].display.w_pixels = cd.panel_w;	// Display
-		hmd->base.hmd->views[eye].display.h_pixels = cd.panel_h;
+		hmd->base.hmd->views[eye].display.w_pixels = cd->panel_w;	// Display
+		hmd->base.hmd->views[eye].display.h_pixels = cd->panel_h;
 
 		hmd->base.hmd->views[eye].viewport.y_pixels = 0;		// Viewport
-		hmd->base.hmd->views[eye].viewport.w_pixels = cd.panel_w;
-		hmd->base.hmd->views[eye].viewport.h_pixels = cd.panel_h;
+		hmd->base.hmd->views[eye].viewport.w_pixels = cd->panel_w;
+		hmd->base.hmd->views[eye].viewport.h_pixels = cd->panel_h;
 		// if rotation is not identity, the dimensions can get more complex.
 		hmd->base.hmd->views[eye].rot = u_device_rotation_ident;
 	}
 	// left eye starts at x=0, right eye starts at x=panel_width
 	hmd->base.hmd->views[0].viewport.x_pixels = 0;
-	hmd->base.hmd->views[1].viewport.x_pixels = cd.panel_w;
+	hmd->base.hmd->views[1].viewport.x_pixels = cd->panel_w;
 
 	return CONFIG_SUCCESS;
 }
@@ -326,8 +326,8 @@ diy_vr_create(void)
 	const cJSON *config_json = read_config_file(file_path); // Interpret file into a JSON format
 	extract_config_data(config_data, config_json);			
 
-	snprintf(hmd->base.str, XRT_DEVICE_NAME_LEN, config_data.name);	// Assigning names to base.str & base.serial
-	snprintf(hmd->base.serial, XRT_DEVICE_NAME_LEN, config_data.serial);	// TODO May need to configure base.str to be EDID for compositor
+	snprintf(hmd->base.str, XRT_DEVICE_NAME_LEN, config_data->name);	// Assigning names to base.str & base.serial
+	snprintf(hmd->base.serial, XRT_DEVICE_NAME_LEN, config_data->serial);	// TODO May need to configure base.str to be EDID for compositor
 
 	m_relation_history_create(&hmd->relation_hist);		// Enables history of poses of hmd, where has the hmd been in space.
 	config_hmd_inputs(hmd);  							// TODO COMMENT

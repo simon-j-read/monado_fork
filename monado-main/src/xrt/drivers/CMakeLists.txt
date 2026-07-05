@@ -635,7 +635,7 @@ if(XRT_BUILD_DRIVER_SOLARXR)
 	list(APPEND ENABLED_DRIVERS solarxr)
 endif()
 
-if (XRT_BUILD_DRIVER_DIY)
+if (XRT_BUILD_DRIVER_DIY_VR)
 	add_library(
 			drv_diy_vr STATIC
 			diy_vr/diy_hmd.c
@@ -643,9 +643,6 @@ if (XRT_BUILD_DRIVER_DIY)
 			diy_vr/diy_interface.h
 			diy_vr/read_config.c
 			diy_vr/read_config.h
-			diy_vr/diy_hmd.c
-			diy_vr/diy_hmd.c
-			diy_vr/diy_hmd.c
 	)
 	target_link_libraries(
 			drv_diy_vr PRIVATE

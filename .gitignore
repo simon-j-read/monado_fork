@@ -53,3 +53,12 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Build folders
+build/
+bin/
+include/
+lib/
+share/
+
+
