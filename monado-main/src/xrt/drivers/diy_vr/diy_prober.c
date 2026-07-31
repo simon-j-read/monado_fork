@@ -62,7 +62,7 @@ struct xrt_auto_prober *
 diy_vr_create_auto_prober(void)
 {
 	struct diy_vr_auto_prober *ap = U_TYPED_CALLOC(struct diy_vr_auto_prober);
-	ap->base.name = "Sample HMD Auto-Prober";
+	ap->base.name = "DIY VR HMD Auto-Prober";
 	ap->base.destroy = diy_vr_auto_prober_destroy;
 	ap->base.lelo_dallas_autoprobe = diy_vr_auto_prober_autoprobe;
 

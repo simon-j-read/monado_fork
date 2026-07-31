@@ -84,7 +84,7 @@ cli_cmd_test(int argc, const char **argv)
 	    &xsys,                         // System
 	    &xsysd,                        // System devices.
 	    &xso,                          // Space Overseer.
-	    NULL);                         // System compositor.
+	    NULL);                         // System composi<stdlib.h> tor.
 	if (xret != XRT_SUCCESS) {
 		printf("\tCall to xrt_instance_create_system failed! '%i'\n", xret);
 		return do_exit(&xi, -1);

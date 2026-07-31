@@ -9,8 +9,8 @@
 
 struct diy_config_data
 {
-    char *name;               // Name of HMD (may need to be EDID for compositor leasing)
-    char *serial;             // Serial of HMD (may need to be EDID for compositor leasing)
+    char name[50];               // Name of HMD (may need to be EDID for compositor leasing)
+    char serial[50];             // Serial of HMD (may need to be EDID for compositor leasing)
     float display_refresh_hz;	// Refresh rate of the display in the HMD
     double hFOV_deg;			// Field of views
     double vFOV_deg;			// ""

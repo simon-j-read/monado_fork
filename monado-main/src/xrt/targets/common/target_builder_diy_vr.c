@@ -29,7 +29,7 @@
 DEBUG_GET_ONCE_LOG_OPTION(diy_vr_log, "DIY_VR_LOG", U_LOGGING_INFO)
 
 // Driver disabled by default for being experimental
-DEBUG_GET_ONCE_BOOL_OPTION(enable_diy_vr, "DIY_VR_ENABLE", false)
+DEBUG_GET_ONCE_BOOL_OPTION(enable_diy_vr, "DIY_VR_ENABLE", true)
 
 
 /*
@@ -60,8 +60,8 @@ diy_vr_estimate_system(struct xrt_builder *xb,
 	}
 
 	estimate->certain.head = true;
-	estimate->certain.left = true;
-	estimate->certain.right = true;
+	estimate->certain.left = false;
+	estimate->certain.right = false;
 	estimate->priority = -25;
 
 	return XRT_SUCCESS;

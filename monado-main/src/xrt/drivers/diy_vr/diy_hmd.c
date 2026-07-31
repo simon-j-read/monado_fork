@@ -251,7 +251,7 @@ config_hmd_display(struct diy_vr *hmd, struct diy_config_data *cd)
 	const double hFOV_rad = DEG_TO_RAD(cd->hFOV_deg); // math_computer_fovs needs it in radians
 	const double vFOV_rad = DEG_TO_RAD(cd->vFOV_deg); // from m_api.h
 
-	 if (!check_fovs(hmd, cd->hCOP, hFOV_rad, cd->vCOP, vFOV_rad)) {
+	 if (!check_fovs(hmd, cd->hCOP, cd->vCOP, hFOV_rad, vFOV_rad)) {
 		 HMD_ERROR(hmd, "Failed to setup basic device info: fov calculations");
 	 	return CONFIG_FAILURE; // fov math did not compute correctly
 	 }
@@ -321,19 +321,24 @@ diy_vr_create(void)
 	hmd->pose = (struct xrt_pose)XRT_POSE_IDENTITY;
 	
 	// Load config data (saves having to rebuild the project everytime we alter the HMD).
-	struct diy_config_data *config_data;
+	struct diy_config_data config_data = {
+		.name = "UDEF", .serial = "UDEF", .display_refresh_hz = 60.0,
+		.hFOV_deg = 100.0, .vFOV_deg = 100.0, .hCOP = 0.5, .vCOP = 0.5,
+		.panel_w = 1080, .panel_h = 1080
+	};
+
 	const char *file_path = "/home/simon/Documents/XR/monado_fork/monado-main/src/xrt/drivers/diy_vr/config.json"; // TODO make this adaptable.
 	const cJSON *config_json = read_config_file(file_path); // Interpret file into a JSON format
-	extract_config_data(config_data, config_json);			
+	extract_config_data(&config_data, config_json);
 
-	snprintf(hmd->base.str, XRT_DEVICE_NAME_LEN, config_data->name);	// Assigning names to base.str & base.serial
-	snprintf(hmd->base.serial, XRT_DEVICE_NAME_LEN, config_data->serial);	// TODO May need to configure base.str to be EDID for compositor
+	snprintf(hmd->base.str, XRT_DEVICE_NAME_LEN, "%s", config_data.name);	// Assigning names to base.str & base.serial
+	snprintf(hmd->base.serial, XRT_DEVICE_NAME_LEN, "%s", config_data.serial);	// TODO May need to configure base.str to be EDID for compositor
 
 	m_relation_history_create(&hmd->relation_hist);		// Enables history of poses of hmd, where has the hmd been in space.
 	config_hmd_inputs(hmd);  							// TODO COMMENT
 
 	// Run config display, FOV calculations can fail. Ensure correct config
-	if (config_hmd_display(hmd, config_data) == CONFIG_FAILURE)	{
+	if (config_hmd_display(hmd, &config_data) == CONFIG_FAILURE)	{
 		diy_vr_destroy(&hmd->base);
 		return NULL;
 	}

@@ -37,7 +37,7 @@ void
 extract_config_data(struct diy_config_data *config_data, const cJSON *root) {
 
     size_t max_size = 50;
-    u_json_get_string_into_array(u_json_get(root, "name"),   config_data->serial, max_size);
+    u_json_get_string_into_array(u_json_get(root, "name"),   config_data->name, max_size);
     u_json_get_string_into_array(u_json_get(root, "serial"), config_data->serial, max_size);
 
     u_json_get_float(u_json_get(root, "display_refresh_hz"), &config_data->display_refresh_hz);
