@@ -322,7 +322,7 @@ diy_vr_create(void)
 	
 	// Load config data (saves having to rebuild the project everytime we alter the HMD).
 	struct diy_config_data config_data = {
-		.name = "UDEF", .serial = "UDEF", .display_refresh_hz = 60.0,
+		.name = "Undefined", .serial = "Undefined", .display_refresh_hz = 60.0,
 		.hFOV_deg = 100.0, .vFOV_deg = 100.0, .hCOP = 0.5, .vCOP = 0.5,
 		.panel_w = 1080, .panel_h = 1080
 	};
@@ -332,7 +332,7 @@ diy_vr_create(void)
 	extract_config_data(&config_data, config_json);
 
 	snprintf(hmd->base.str, XRT_DEVICE_NAME_LEN, "%s", config_data.name);	// Assigning names to base.str & base.serial
-	snprintf(hmd->base.serial, XRT_DEVICE_NAME_LEN, "%s", config_data.serial);	// TODO May need to configure base.str to be EDID for compositor
+	snprintf(hmd->base.serial, XRT_DEVICE_NAME_LEN, "%s", config_data.serial);
 
 	m_relation_history_create(&hmd->relation_hist);		// Enables history of poses of hmd, where has the hmd been in space.
 	config_hmd_inputs(hmd);  							// TODO COMMENT
