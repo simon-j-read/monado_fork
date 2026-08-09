@@ -12,16 +12,13 @@
  * @ingroup drv_diy_vr
  */
 
-// TODO - add code in the 'targets/common' area
-#include "read_config.h"
-
-#include "os/os_time.h"
-#include "xrt/xrt_defines.h"
-#include "xrt/xrt_device.h"
-
 #include "math/m_relation_history.h"
 #include "math/m_api.h"
 #include "math/m_mathinclude.h" // IWYU pragma: keep
+
+#include "os/os_hid.h"
+#include "os/os_time.h"
+#include "os/os_threading.h"
 
 #include "util/u_debug.h"
 #include "util/u_device.h"
@@ -31,37 +28,18 @@
 #include "util/u_time.h"
 #include "util/u_var.h"
 #include "util/u_visibility_mask.h"
+
+#include "xrt/xrt_defines.h"
+#include "xrt/xrt_device.h"
 #include "xrt/xrt_results.h"
 
 #include <stdio.h>
 
+#include "read_config.h"
+#include "diy_interface.h"
+
 #define CONFIG_SUCCESS 1
 #define CONFIG_FAILURE 0
-
-
-/*
- *
- * Structs and defines.
- *
- */
-
-/*!
- * A diy_vr HMD device.
- *
- * @implements xrt_device
- */
-struct diy_vr
-{
-	struct xrt_device base;
-
-	struct xrt_pose pose;
-
-	enum u_logging_level log_level;
-
-	// has built-in mutex so thread safe
-	struct m_relation_history *relation_hist;
-};
-
 
 /// Casting helper function
 static inline struct diy_vr *
@@ -102,6 +80,10 @@ diy_vr_update_inputs(struct xrt_device *xdev)
 	return XRT_SUCCESS;
 }
 
+// This will be used by other parts of monado to get the HMD's current pose
+// I believe, hence why there needs to be thread locking in certain parts to
+// prevent the thread that is updating the pose to conflict with the thread
+// that is reading the pose.
 static xrt_result_t
 diy_vr_get_tracked_pose(struct xrt_device *xdev,
                             enum xrt_input_name name,
@@ -298,13 +280,94 @@ config_hmd_relation_hist(struct diy_vr *hmd)
 
 }
 
+static constexpr uint8_t MSG_LEN = 36;
+static constexpr uint8_t UPDATE_DONE = 1;
+
+static int
+diy_vr_update(struct diy_vr *hmd) {
+	uint8_t buffer[MSG_LEN_LARGE]{};
+
+	auto bytesRead = os_hid_read(hmd->dev, buffer, sizeof(buffer), 100);
+
+	if (bytesRead >= 0) {
+		HMD_WARN(hmd, "Read 0 bytes from device");
+		return UPDATE_DONE;
+	}
+	while (bytesRead > 0) {
+		if (bytesRead != MSG_LEN) {
+			HMD_DEBUG(hmd, "Got unexpected number of bytes: %d bytes", bytesRead);
+			return UPDATE_DONE;
+		}
+		bytesRead = os_hid_read(hd->dev, buffer, sizeof(buffer), 0);
+	}
+
+
+
+	return UPDATE_DONE;
+}
+
+/*
+ * TODO FILL Documentation
+ */
+static void *
+diy_vr_run_thread(void *ptr)
+{
+	struct diy_vr *hmd = diy_vr((struct xrt_device *)ptr);
+
+	os_thread_helper_lock(&hmd->imu_thread);
+	while (os_thread_helper_is_running_locked(&hmd->imu_thread)) {
+		os_thread_helper_unlock(&hmd->imu_thread);
+
+		if (!diy_vr_update(hmd)) {
+			return NULL;
+		}
+
+		// Just keep swimming.
+		os_thread_helper_lock(&hmd->imu_thread);
+	}
+	return NULL;
+}
+
+/*
+ * section for the configuration of the USB HID for the Arduino IMU reading.
+ * So setting up the HID, os_thread, etc.
+ * TODO populate the rest of this function info block.
+ */
+int
+config_hid(struct diy_vr *hmd) {
+
+	int ret = os_thread_helper_init(hmd->imu_thread);
+	if (ret != 0) {
+		HMD_ERROR(hmd, "Failed to start imu thread!");
+		diy_vr_destroy(&hmd->base);
+		return CONFIG_FAILURE;
+	}
+
+	if (hmd->dev) {
+		// Mutex before thread.
+		ret = os_mutex_init(hmd->lock);
+		if (ret != 0) {
+			HMD_ERROR(hmd, "Failed to init mutex!");
+			diy_vr_destroy(&hmd->base);
+			return CONFIG_FAILURE;
+		}
+
+		ret = os_thread_helper_start(hmd->imu_thread, diy_vr_run_thread, hmd);
+		if (ret != 0) {
+			HMD_ERROR(hmd, "Failed to start mainboard thread!");
+			diy_vr_destroy(&hmd->base);
+			return CONFIG_FAILURE;
+		}
+	}
+}
+
 
 /*
 *	TODO - Complete refactor of the function
 * 		(Breaking it up into bite size pieces and figuring out what it all means and does)
 */
 struct xrt_device *
-diy_vr_create(void)
+diy_vr_create(struct os_hid_device *dev)
 {
 	// This indicates you won't be using Monado's built-in tracking algorithms.
 	enum u_device_alloc_flags flags =
@@ -313,6 +376,10 @@ diy_vr_create(void)
 	struct diy_vr *hmd = U_DEVICE_ALLOCATE(struct diy_vr, flags, 1, 0);
 	hmd->log_level = debug_get_log_option_diy_vr_log();
 
+	if (config_hid(hmd) == CONFIG_FAILURE)	{
+		diy_vr_destroy(&hmd->base);
+		return NULL;
+	}
 	config_hmd_blend_modes(hmd);			// Placing Opaque blend mode in.
 	config_hmd_functions(hmd); 				// Assigning custom functions for inherited HMD->base
 	u_distortion_mesh_set_none(&hmd->base); // Distortion information, fills in xdev->compute_distortion().
@@ -321,6 +388,7 @@ diy_vr_create(void)
 	hmd->pose = (struct xrt_pose)XRT_POSE_IDENTITY;
 	
 	// Load config data (saves having to rebuild the project everytime we alter the HMD).
+	// Just putting some dummy values in below before actually loading the JSON in.
 	struct diy_config_data config_data = {
 		.name = "Undefined", .serial = "Undefined", .display_refresh_hz = 60.0,
 		.hFOV_deg = 100.0, .vFOV_deg = 100.0, .hCOP = 0.5, .vCOP = 0.5,

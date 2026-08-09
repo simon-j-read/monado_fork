@@ -238,6 +238,11 @@ struct xrt_prober_entry target_entry_list[] = {
     {HDK_VID, HDK_PID, hdk_found, "OSVR HDK", "osvr"},
 #endif // XRT_BUILD_DRIVER_HDK
 
+#ifdef XRT_BUILD_DRIVER_DIY_VR
+    {DIY_VR_VID, DIY_VR_PID, diy_vr_found, "DIY VR", "diy_vr"}
+#endif // XRT_BUILD_DRIVER_DIY_VR
+
+
     {0x0000, 0x0000, NULL, NULL, NULL}, // Terminate
 };
 

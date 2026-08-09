@@ -7,5 +7,8 @@
   "hCOP" : 0.5,
   "vCOP" : 0.5,
   "panel_w" : 1440,
-  "panel_h" : 1440
+  "panel_h" : 1440,
+  "arduino_VID" : "0x2431",
+  "arduino_PID" : "0x8036"
+
 }
