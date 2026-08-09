@@ -34,6 +34,7 @@
 #include "xrt/xrt_results.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #include "read_config.h"
 #include "diy_interface.h"
@@ -48,8 +49,8 @@ struct arduino_parsed_sample
 {
 	uint32_t time;
 	uint32_t delta;
-	struct xrt_vec3_i32 accel;
-	struct xrt_vec3_i32 gyro;
+	struct xrt_vec3 accel;
+	struct xrt_vec3 gyro;
 };
 
 struct arduino_parsed_input
@@ -72,6 +73,21 @@ DEBUG_GET_ONCE_LOG_OPTION(diy_vr_log, "DIY_VR_LOG", U_LOGGING_WARN)
 #define HMD_DEBUG(hmd, ...) U_LOG_XDEV_IFL_D(&hmd->base, hmd->log_level, __VA_ARGS__)
 #define HMD_INFO(hmd, ...) U_LOG_XDEV_IFL_I(&hmd->base, hmd->log_level, __VA_ARGS__)
 #define HMD_ERROR(hmd, ...) U_LOG_XDEV_IFL_E(&hmd->base, hmd->log_level, __VA_ARGS__)
+
+
+static uint32_t
+calc_delta_and_handle_rollover(uint32_t next, uint32_t last)
+{
+	uint32_t tick_delta = next - last;
+
+	// The 24-bit tick counter has rolled over,
+	// adjust the "negative" value to be positive.
+	if (tick_delta > 0xffffff) {
+		tick_delta += 0x1000000;
+	}
+
+	return tick_delta;
+}
 
 static void
 diy_vr_destroy(struct xrt_device *xdev)
@@ -100,7 +116,7 @@ diy_vr_update_inputs(struct xrt_device *xdev)
 
 /*
  * A consumer of pose data
- * See "diy_vr_update" for the "updater" of the pose data.
+ * See "arduino_run_thread" for the "updater" of the pose data.
  *
  * This will be used by other parts of monado to get the HMD's current pose
  * I believe, hence why there needs to be thread locking in certain parts to
@@ -303,39 +319,68 @@ config_hmd_relation_hist(struct diy_vr *hmd)
 
 }
 
-static constexpr uint8_t MSG_LEN = 36;
-static constexpr uint8_t UPDATE_DONE = 1;
+// static constexpr uint8_t MSG_LEN = 36;
+// static constexpr uint8_t UPDATE_DONE = 1;
+//
+// static int
+// diy_vr_update(struct diy_vr *hmd) {
+// 	uint8_t buffer[MSG_LEN_LARGE]{};
+//
+// 	auto bytesRead = os_hid_read(hmd->dev, buffer, sizeof(buffer), 100);
+//
+// 	if (bytesRead >= 0) {
+// 		HMD_WARN(hmd, "Read 0 bytes from device");
+// 		return UPDATE_DONE;
+// 	}
+// 	while (bytesRead > 0) {
+// 		if (bytesRead != MSG_LEN) {
+// 			HMD_DEBUG(hmd, "Got unexpected number of bytes: %d bytes", bytesRead);
+// 			return UPDATE_DONE;
+// 		}
+// 		bytesRead = os_hid_read(hd->dev, buffer, sizeof(buffer), 0);
+// 	}
+//
+//
+//
+// 	return UPDATE_DONE;
+// }
 
-static int
-diy_vr_update(struct diy_vr *hmd) {
-	uint8_t buffer[MSG_LEN_LARGE]{};
+/*
+ *
+ */
+static void
+update_fusion(struct diy_vr *hmd,
+			  struct arduino_parsed_sample *sample,
+			  timepoint_ns timestamp_ns,
+			  time_duration_ns delta_ns)
+{
 
-	auto bytesRead = os_hid_read(hmd->dev, buffer, sizeof(buffer), 100);
+	hmd->device_time += (uint64_t)sample->delta * 1000;
 
-	if (bytesRead >= 0) {
-		HMD_WARN(hmd, "Read 0 bytes from device");
-		return UPDATE_DONE;
-	}
-	while (bytesRead > 0) {
-		if (bytesRead != MSG_LEN) {
-			HMD_DEBUG(hmd, "Got unexpected number of bytes: %d bytes", bytesRead);
-			return UPDATE_DONE;
-		}
-		bytesRead = os_hid_read(hd->dev, buffer, sizeof(buffer), 0);
-	}
+	m_imu_3dof_update(&hmd->fusion, hmd->device_time, &sample->accel, &sample->gyro);
 
-
-
-	return UPDATE_DONE;
+	double delta_device_ms = (double)sample->delta / 1000.0;
+	double delta_host_ms = (double)delta_ns / (1000.0 * 1000.0);
+	HMD_DEBUG(hmd, "%+fms %+fms", delta_host_ms, delta_device_ms);
+	HMD_DEBUG(hmd, "fusion sample %u (ax %.3f ay %.3f az %.3f) (gx %.3f gy %.3f gz %.3f)",
+			  sample->time,
+			  sample->accel.x, sample->accel.y, sample->accel.z,
+			  sample->gyro.x, sample->gyro.y, sample->gyro.z);
+	HMD_DEBUG(hmd, " ");
 }
 
 
+/*
+ * From data
+ */
 static void
 arduino_parse_input(struct diy_vr *hmd, void *data, struct arduino_parsed_input *input)
 {
 	U_ZERO(input);
+	const int bytes_4 = 4;
 	unsigned char *b = (unsigned char *)data;
-	HMD_TRACE(ad,
+	// Raw HID visualisation
+	HMD_TRACE(hmd,
 				  "raw input: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
 				  "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
 				  "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
@@ -343,18 +388,26 @@ arduino_parse_input(struct diy_vr *hmd, void *data, struct arduino_parsed_input 
 				  b[15], b[16], b[17], b[18], b[19], b[20], b[21], b[22], b[23], b[24], b[25], b[26], b[27], b[28],
 				  b[29], b[30], b[31], b[32], b[33], b[34], b[35]);
 
-	uint32_t time = b[5] | b[4] << 8 | b[3] << 16;
+	// Accelerations
+	memcpy(&input->sample.accel.x, b[0], bytes_4);
+	memcpy(&input->sample.accel.y, b[4], bytes_4);
+	memcpy(&input->sample.accel.z, b[8], bytes_4);
 
-	input->sample.time = time;
-	input->sample.delta = calc_delta_and_handle_rollover(time, ad->last_time);
-	ad->last_time = time;
+	// Gyro
+	memcpy(&input->sample.gyro.x, b[12], bytes_4);
+	memcpy(&input->sample.gyro.y, b[16], bytes_4);
+	memcpy(&input->sample.gyro.z, b[20], bytes_4);
 
-	input->sample.accel.x = read_i16(b, 6);
-	input->sample.accel.y = read_i16(b, 8);
-	input->sample.accel.z = read_i16(b, 10);
-	input->sample.gyro.x = read_i16(b, 12);
-	input->sample.gyro.y = read_i16(b, 14);
-	input->sample.gyro.z = read_i16(b, 16);
+	// Arduino time since program start (difference from last sample)
+	memcpy(&input->sample.time, b[24], bytes_4);
+	input->sample.delta = calc_delta_and_handle_rollover(time, hmd->last_time);
+	hmd->last_time = time;
+
+	// Parsed HID visualisation
+	HMD_TRACE(hmd, "parsed: accel(%.3f, %.3f, %.3f) gyro(%.3f, %.3f, %.3f) t=%u",
+		  input->sample.accel.x, input->sample.accel.y, input->sample.accel.z,
+		  input->sample.gyro_x, input->sample.gyro_y, input->sample.gyro_z,
+		  input->sample.time);
 }
 
 
@@ -401,10 +454,13 @@ arduino_read_one_packet(struct diy_vr *hmd, uint8_t *buffer)
 
 
 /*
- * TODO FILL Documentation
+ * This helper thread is responsible for reading the HID data from the arduino
+ * one packet at a time. Parsing that data into the required format to be fed
+ * into Monado's fusion functions for IMUs. These will update the pose of the HMD.
+ * After which can be used by getter functions like get_tracked_pose
  */
 static void *
-diy_vr_run_thread(void *ptr)
+arduino_run_thread(void *ptr)
 {
 	struct diy_vr *hmd = diy_vr((struct xrt_device *)ptr);
 	uint8_t buffer[PACKET_SIZE];
@@ -430,48 +486,15 @@ diy_vr_run_thread(void *ptr)
 		then_ns = now_ns;
 
 		// Lock last and the fusion.
-		os_mutex_lock(&ad->lock);
+		os_mutex_lock(&hmd->lock);
 
 		// Process the parsed data.
-		update_fusion(ad, &input.sample, now_ns, delta_ns);
+		update_fusion(hmd, &input.sample, now_ns, delta_ns);
 
 		// Now done.
-		os_mutex_unlock(&ad->lock);
+		os_mutex_unlock(&hmd->lock);
 	}
 	return NULL;
-}
-
-/*
- * section for the configuration of the USB HID for the Arduino IMU reading.
- * So setting up the HID, os_thread, etc.
- * TODO populate the rest of this function info block.
- */
-int
-config_hid(struct diy_vr *hmd) {
-
-	int ret = os_thread_helper_init(hmd->imu_thread);
-	if (ret != 0) {
-		HMD_ERROR(hmd, "Failed to start imu thread!");
-		diy_vr_destroy(&hmd->base);
-		return FAILURE;
-	}
-
-	if (hmd->dev) {
-		// Mutex before thread.
-		ret = os_mutex_init(hmd->lock);
-		if (ret != 0) {
-			HMD_ERROR(hmd, "Failed to init mutex!");
-			diy_vr_destroy(&hmd->base);
-			return FAILURE;
-		}
-
-		ret = os_thread_helper_start(hmd->imu_thread, diy_vr_run_thread, hmd);
-		if (ret != 0) {
-			HMD_ERROR(hmd, "Failed to start mainboard thread!");
-			diy_vr_destroy(&hmd->base);
-			return FAILURE;
-		}
-	}
 }
 
 
@@ -526,6 +549,15 @@ diy_vr_create(struct os_hid_device *dev)
 
 	u_distortion_mesh_set_none(&hmd->base); // Distortion information, fills in xdev->compute_distortion().
 	config_hmd_relation_hist(hmd);			// Config the already initialised HMD pose history buffer.
+
+	// IMU Tracking
+	m_imu_3dof_init(&hmd->fusion, M_IMU_3DOF_USE_GRAVITY_DUR_300MS); //Options are 300MS/20MS don't really know the difference.
+	int ret = os_thread_helper_start(&hmd->imu_thread, arduino_run_thread, hmd);
+	if (ret != 0) {
+		HMD_ERROR(ad, "Failed to start thread!");
+		diy_vr_destroy(&hmd->base);
+		return NULL;
+	}
 
 	// Setup variable tracker: Optional but useful for debugging
 	u_var_add_root(hmd, "Sample HMD", true);

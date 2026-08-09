@@ -60,7 +60,7 @@ struct diy_vr
     struct os_mutex lock;				// Thread locking stuff
     bool disconnect_notified;           // For notification that we aren't reading anything from HID
 
-    struct m_imu_pre_filter pre_filter;
+    uint32_t last_time;
     struct m_imu_3dof fusion;
 
     enum u_logging_level log_level;
