@@ -38,8 +38,26 @@
 #include "read_config.h"
 #include "diy_interface.h"
 
-#define CONFIG_SUCCESS 1
-#define CONFIG_FAILURE 0
+#define SUCCESS 1
+#define FAILURE 0
+
+/*!
+ * A parsed sample of accel and gyro.
+ */
+struct arduino_parsed_sample
+{
+	uint32_t time;
+	uint32_t delta;
+	struct xrt_vec3_i32 accel;
+	struct xrt_vec3_i32 gyro;
+};
+
+struct arduino_parsed_input
+{
+	uint32_t timestamp;
+	struct arduino_parsed_sample sample;
+};
+
 
 /// Casting helper function
 static inline struct diy_vr *
@@ -80,10 +98,15 @@ diy_vr_update_inputs(struct xrt_device *xdev)
 	return XRT_SUCCESS;
 }
 
-// This will be used by other parts of monado to get the HMD's current pose
-// I believe, hence why there needs to be thread locking in certain parts to
-// prevent the thread that is updating the pose to conflict with the thread
-// that is reading the pose.
+/*
+ * A consumer of pose data
+ * See "diy_vr_update" for the "updater" of the pose data.
+ *
+ * This will be used by other parts of monado to get the HMD's current pose
+ * I believe, hence why there needs to be thread locking in certain parts to
+ * prevent the thread that is updating the pose to conflict with the thread
+ * that is reading the pose.
+ */
 static xrt_result_t
 diy_vr_get_tracked_pose(struct xrt_device *xdev,
                             enum xrt_input_name name,
@@ -202,7 +225,7 @@ int
 check_fovs(struct diy_vr *hmd, const double hCOP, const double vCOP, const double hFOV, const double vFOV)
 
 {
-	int compute_outcome = CONFIG_SUCCESS;
+	int compute_outcome = SUCCESS;
 	if (
 	/* right eye */
 	!math_compute_fovs(1, hCOP, hFOV, 1, vCOP, vFOV, &hmd->base.hmd->distortion.fov[1]) ||
@@ -213,7 +236,7 @@ check_fovs(struct diy_vr *hmd, const double hCOP, const double vCOP, const doubl
 	!math_compute_fovs(1, 1.0 - hCOP, hFOV, 1, vCOP, vFOV, &hmd->base.hmd->distortion.fov[0]))
 	{
 		// If those failed, it means our math was impossible.
-		compute_outcome = CONFIG_FAILURE;
+		compute_outcome = FAILURE;
 	}
 
 	return compute_outcome;
@@ -235,7 +258,7 @@ config_hmd_display(struct diy_vr *hmd, struct diy_config_data *cd)
 
 	 if (!check_fovs(hmd, cd->hCOP, cd->vCOP, hFOV_rad, vFOV_rad)) {
 		 HMD_ERROR(hmd, "Failed to setup basic device info: fov calculations");
-	 	return CONFIG_FAILURE; // fov math did not compute correctly
+	 	return FAILURE; // fov math did not compute correctly
 	 }
 
 	hmd->base.hmd->screens[0].w_pixels = cd->panel_w * 2;	// Have 2 panels, but treated as a single screen by Monado
@@ -256,7 +279,7 @@ config_hmd_display(struct diy_vr *hmd, struct diy_config_data *cd)
 	hmd->base.hmd->views[0].viewport.x_pixels = 0;
 	hmd->base.hmd->views[1].viewport.x_pixels = cd->panel_w;
 
-	return CONFIG_SUCCESS;
+	return SUCCESS;
 }
 
 
@@ -306,6 +329,77 @@ diy_vr_update(struct diy_vr *hmd) {
 	return UPDATE_DONE;
 }
 
+
+static void
+arduino_parse_input(struct diy_vr *hmd, void *data, struct arduino_parsed_input *input)
+{
+	U_ZERO(input);
+	unsigned char *b = (unsigned char *)data;
+	HMD_TRACE(ad,
+				  "raw input: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
+				  "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
+				  "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+				  b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14],
+				  b[15], b[16], b[17], b[18], b[19], b[20], b[21], b[22], b[23], b[24], b[25], b[26], b[27], b[28],
+				  b[29], b[30], b[31], b[32], b[33], b[34], b[35]);
+
+	uint32_t time = b[5] | b[4] << 8 | b[3] << 16;
+
+	input->sample.time = time;
+	input->sample.delta = calc_delta_and_handle_rollover(time, ad->last_time);
+	ad->last_time = time;
+
+	input->sample.accel.x = read_i16(b, 6);
+	input->sample.accel.y = read_i16(b, 8);
+	input->sample.accel.z = read_i16(b, 10);
+	input->sample.gyro.x = read_i16(b, 12);
+	input->sample.gyro.y = read_i16(b, 14);
+	input->sample.gyro.z = read_i16(b, 16);
+}
+
+
+/*!
+ * Reads one packet from the device,handles locking and checking if
+ * the thread has been told to shut down.
+ * 
+ * Read data goes into "buffer" which will be parsed outside this function.
+ */
+static bool
+arduino_read_one_packet(struct diy_vr *hmd, uint8_t *buffer)
+{
+	// Wait for something to come through HID (might need to play with block timer)
+	const uint8_t block_ms = 100;
+	auto bytesRead = os_hid_read(hmd->dev, buffer, PACKET_SIZE, block_ms);
+
+	// Something wrong, shouldn't get negative in normal operating mode.
+	// I think it indicates a disconnection
+	if (bytesRead < 0) {
+		if (!hmd->disconnect_notified) {
+			HMD_ERROR(hmd, "Negative bytes read from HID, not good. Arduino disconnected?");
+			hmd->disconnect_notified = true;
+		}
+		return FAILURE;
+
+	// No data in HID buffer even after waiting, won't update pose this time.
+	// Might need to adjust Arduino output if this happens too often.
+	} else if (bytesRead == 0) {
+		HMD_WARN(hmd, "Read 0 bytes from device");
+		return SUCCESS;
+	}
+	// Now that something is in the buffer, loop through till you get the lastest packet.
+	// Will exit loop with latest packets saved into bytesread.
+	while (bytesRead > 0) {
+		if (bytesRead != PACKET_SIZE) {
+			HMD_DEBUG(hmd, "Only got %d bytes", bytesRead);
+			return SUCCESS;
+		}
+		bytesRead = os_hid_read(hmd->dev, buffer, PACKET_SIZE, 0); // Block 0, means 0 polls.
+	}
+
+	return SUCCESS;
+}
+
+
 /*
  * TODO FILL Documentation
  */
@@ -313,17 +407,36 @@ static void *
 diy_vr_run_thread(void *ptr)
 {
 	struct diy_vr *hmd = diy_vr((struct xrt_device *)ptr);
+	uint8_t buffer[PACKET_SIZE];
+	timepoint_ns then_ns;
+	timepoint_ns now_ns;
+	struct arduino_parsed_input input; // = {0};
 
-	os_thread_helper_lock(&hmd->imu_thread);
-	while (os_thread_helper_is_running_locked(&hmd->imu_thread)) {
-		os_thread_helper_unlock(&hmd->imu_thread);
+	// wait for a package to sync up, it's discarded but that's okay.
+	if (!arduino_read_one_packet(hmd, buffer, PACKET_SIZE)) {
+		return NULL;
+	}
 
-		if (!diy_vr_update(hmd)) {
-			return NULL;
-		}
+	then_ns = os_monotonic_get_ns();
+	while (arduino_read_one_packet(hmd, buffer, PACKET_SIZE)) {
 
-		// Just keep swimming.
-		os_thread_helper_lock(&hmd->imu_thread);
+		// As close to when we get a packet.
+		now_ns = os_monotonic_get_ns();
+
+		// Parse the data we got.
+		arduino_parse_input(hmd, buffer, &input);
+
+		time_duration_ns delta_ns = now_ns - then_ns;
+		then_ns = now_ns;
+
+		// Lock last and the fusion.
+		os_mutex_lock(&ad->lock);
+
+		// Process the parsed data.
+		update_fusion(ad, &input.sample, now_ns, delta_ns);
+
+		// Now done.
+		os_mutex_unlock(&ad->lock);
 	}
 	return NULL;
 }
@@ -340,7 +453,7 @@ config_hid(struct diy_vr *hmd) {
 	if (ret != 0) {
 		HMD_ERROR(hmd, "Failed to start imu thread!");
 		diy_vr_destroy(&hmd->base);
-		return CONFIG_FAILURE;
+		return FAILURE;
 	}
 
 	if (hmd->dev) {
@@ -349,14 +462,14 @@ config_hid(struct diy_vr *hmd) {
 		if (ret != 0) {
 			HMD_ERROR(hmd, "Failed to init mutex!");
 			diy_vr_destroy(&hmd->base);
-			return CONFIG_FAILURE;
+			return FAILURE;
 		}
 
 		ret = os_thread_helper_start(hmd->imu_thread, diy_vr_run_thread, hmd);
 		if (ret != 0) {
 			HMD_ERROR(hmd, "Failed to start mainboard thread!");
 			diy_vr_destroy(&hmd->base);
-			return CONFIG_FAILURE;
+			return FAILURE;
 		}
 	}
 }
@@ -376,7 +489,7 @@ diy_vr_create(struct os_hid_device *dev)
 	struct diy_vr *hmd = U_DEVICE_ALLOCATE(struct diy_vr, flags, 1, 0);
 	hmd->log_level = debug_get_log_option_diy_vr_log();
 
-	if (config_hid(hmd) == CONFIG_FAILURE)	{
+	if (config_hid(hmd) == FAILURE)	{
 		diy_vr_destroy(&hmd->base);
 		return NULL;
 	}
@@ -406,7 +519,7 @@ diy_vr_create(struct os_hid_device *dev)
 	config_hmd_inputs(hmd);  							// TODO COMMENT
 
 	// Run config display, FOV calculations can fail. Ensure correct config
-	if (config_hmd_display(hmd, &config_data) == CONFIG_FAILURE)	{
+	if (config_hmd_display(hmd, &config_data) == FAILURE)	{
 		diy_vr_destroy(&hmd->base);
 		return NULL;
 	}

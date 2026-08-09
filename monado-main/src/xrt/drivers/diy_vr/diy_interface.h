@@ -41,6 +41,8 @@ extern "C" {
 #define DIY_VR_VID 0x2431
 #define DIY_VR_PID 0x8036
 
+#define PACKET_SIZE 36 // Number of bytes in Arduino HID packet.
+
 /*!
  * A diy_vr HMD device.
  *
@@ -56,6 +58,10 @@ struct diy_vr
     struct os_hid_device *dev;		    // Arduino Pro Micro HID with Adafruit IMU20948
     struct os_thread_helper imu_thread; // Used to read IMU sensor packets via Arduino HID.
     struct os_mutex lock;				// Thread locking stuff
+    bool disconnect_notified;           // For notification that we aren't reading anything from HID
+
+    struct m_imu_pre_filter pre_filter;
+    struct m_imu_3dof fusion;
 
     enum u_logging_level log_level;
 
