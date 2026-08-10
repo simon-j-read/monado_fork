@@ -10,8 +10,12 @@
 
 #pragma once
 
+#include "xrt/xrt_device.h"
+#include "xrt/xrt_prober.h"
+#include "os/os_hid.h"
 #include "os/os_threading.h"
 #include "math/m_imu_3dof.h"
+#include "math/m_relation_history.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,6 +47,7 @@ extern "C" {
 // arduino.
 #define DIY_VR_VID 0x2431
 #define DIY_VR_PID 0x8036
+#define ARDUINO_IFACE 2 // May need to run "monado-cli test" to see what the iface is.
 
 #define PACKET_SIZE 36 // Number of bytes in Arduino HID packet.
 

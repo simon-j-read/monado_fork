@@ -26,7 +26,7 @@ diy_vr_found(struct xrt_prober *xp,
 
 	struct os_hid_device *hid = NULL;
 
-	int result = xrt_prober_open_hid_interface(xp, dev, 0, &hid);
+	int result = xrt_prober_open_hid_interface(xp, dev, ARDUINO_IFACE, &hid);
 	if (result != 0) {
 		U_LOG_E("%s - Failed to open Arduino HID interface", __func__);
 		return -1;
