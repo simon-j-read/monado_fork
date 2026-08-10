@@ -72,6 +72,7 @@ DEBUG_GET_ONCE_LOG_OPTION(diy_vr_log, "DIY_VR_LOG", U_LOGGING_WARN)
 #define HMD_TRACE(hmd, ...) U_LOG_XDEV_IFL_T(&hmd->base, hmd->log_level, __VA_ARGS__)
 #define HMD_DEBUG(hmd, ...) U_LOG_XDEV_IFL_D(&hmd->base, hmd->log_level, __VA_ARGS__)
 #define HMD_INFO(hmd, ...) U_LOG_XDEV_IFL_I(&hmd->base, hmd->log_level, __VA_ARGS__)
+#define HMD_WARN(hmd, ...) U_LOG_XDEV_IFL_W(&hmd->base, hmd->log_level, __VA_ARGS__)
 #define HMD_ERROR(hmd, ...) U_LOG_XDEV_IFL_E(&hmd->base, hmd->log_level, __VA_ARGS__)
 
 
@@ -97,6 +98,14 @@ diy_vr_destroy(struct xrt_device *xdev)
 	// Remove the variable tracking.
 	u_var_remove_root(hmd);
 
+	// Destroy the thread object.
+	os_thread_helper_destroy(&hmd->imu_thread);
+
+	// Now that the thread is not running we can destroy the lock.
+	os_mutex_destroy(&hmd->lock);
+
+	// Destroy the fusion.
+	m_imu_3dof_close(&hmd->fusion);
 
 	m_relation_history_destroy(&hmd->relation_hist);
 
@@ -136,22 +145,14 @@ diy_vr_get_tracked_pose(struct xrt_device *xdev,
 		return XRT_ERROR_INPUT_UNSUPPORTED;
 	}
 
-	struct xrt_space_relation relation = XRT_SPACE_RELATION_ZERO;
 
-	enum m_relation_history_result history_result =
-	    m_relation_history_get(hmd->relation_hist, at_timestamp_ns, &relation);
-	if (history_result == M_RELATION_HISTORY_RESULT_INVALID) {
-		// If you get in here, it means you did not push any poses into the relation history.
-		// You may want to handle this differently.
-		HMD_ERROR(hmd, "Internal error: no poses pushed?");
-	}
+	os_mutex_lock(&hmd->lock);
 
-	if ((relation.relation_flags & XRT_SPACE_RELATION_ORIENTATION_VALID_BIT) != 0) {
-		// If we provide an orientation, make sure that it is normalized.
-		math_quat_normalize(&relation.pose.orientation);
-	}
+	out_relation->pose.orientation = hmd->fusion.rot;
+	math_quat_normalize(&out_relation->pose.orientation); // should this happen?
 
-	*out_relation = relation;
+	os_mutex_unlock(&hmd->lock);
+
 	return XRT_SUCCESS;
 }
 
@@ -316,34 +317,8 @@ config_hmd_relation_hist(struct diy_vr *hmd)
 
 	uint64_t now = os_monotonic_get_ns();							// Pushing to buffer requires a timestamp
 	m_relation_history_push(hmd->relation_hist, &identity, now);	// Pushing identity onto the HMD's pose history buffer
-
 }
 
-// static constexpr uint8_t MSG_LEN = 36;
-// static constexpr uint8_t UPDATE_DONE = 1;
-//
-// static int
-// diy_vr_update(struct diy_vr *hmd) {
-// 	uint8_t buffer[MSG_LEN_LARGE]{};
-//
-// 	auto bytesRead = os_hid_read(hmd->dev, buffer, sizeof(buffer), 100);
-//
-// 	if (bytesRead >= 0) {
-// 		HMD_WARN(hmd, "Read 0 bytes from device");
-// 		return UPDATE_DONE;
-// 	}
-// 	while (bytesRead > 0) {
-// 		if (bytesRead != MSG_LEN) {
-// 			HMD_DEBUG(hmd, "Got unexpected number of bytes: %d bytes", bytesRead);
-// 			return UPDATE_DONE;
-// 		}
-// 		bytesRead = os_hid_read(hd->dev, buffer, sizeof(buffer), 0);
-// 	}
-//
-//
-//
-// 	return UPDATE_DONE;
-// }
 
 /*
  *
@@ -355,9 +330,9 @@ update_fusion(struct diy_vr *hmd,
 			  time_duration_ns delta_ns)
 {
 
-	hmd->device_time += (uint64_t)sample->delta * 1000;
+	//hmd->device_time += (uint64_t)sample->delta * 1000;
 
-	m_imu_3dof_update(&hmd->fusion, hmd->device_time, &sample->accel, &sample->gyro);
+	m_imu_3dof_update(&hmd->fusion, timestamp_ns, &sample->accel, &sample->gyro);
 
 	double delta_device_ms = (double)sample->delta / 1000.0;
 	double delta_host_ms = (double)delta_ns / (1000.0 * 1000.0);
@@ -389,24 +364,24 @@ arduino_parse_input(struct diy_vr *hmd, void *data, struct arduino_parsed_input 
 				  b[29], b[30], b[31], b[32], b[33], b[34], b[35]);
 
 	// Accelerations
-	memcpy(&input->sample.accel.x, b[0], bytes_4);
-	memcpy(&input->sample.accel.y, b[4], bytes_4);
-	memcpy(&input->sample.accel.z, b[8], bytes_4);
+	memcpy(&input->sample.accel.x, &b[0], bytes_4);
+	memcpy(&input->sample.accel.y, &b[4], bytes_4);
+	memcpy(&input->sample.accel.z, &b[8], bytes_4);
 
 	// Gyro
-	memcpy(&input->sample.gyro.x, b[12], bytes_4);
-	memcpy(&input->sample.gyro.y, b[16], bytes_4);
-	memcpy(&input->sample.gyro.z, b[20], bytes_4);
+	memcpy(&input->sample.gyro.x, &b[12], bytes_4);
+	memcpy(&input->sample.gyro.y, &b[16], bytes_4);
+	memcpy(&input->sample.gyro.z, &b[20], bytes_4);
 
 	// Arduino time since program start (difference from last sample)
-	memcpy(&input->sample.time, b[24], bytes_4);
+	memcpy(&input->sample.time, &b[24], bytes_4);
 	input->sample.delta = calc_delta_and_handle_rollover(time, hmd->last_time);
-	hmd->last_time = time;
+	hmd->last_time = input->sample.time;
 
 	// Parsed HID visualisation
 	HMD_TRACE(hmd, "parsed: accel(%.3f, %.3f, %.3f) gyro(%.3f, %.3f, %.3f) t=%u",
 		  input->sample.accel.x, input->sample.accel.y, input->sample.accel.z,
-		  input->sample.gyro_x, input->sample.gyro_y, input->sample.gyro_z,
+		  input->sample.gyro.x, input->sample.gyro.y, input->sample.gyro.z,
 		  input->sample.time);
 }
 
@@ -422,7 +397,7 @@ arduino_read_one_packet(struct diy_vr *hmd, uint8_t *buffer)
 {
 	// Wait for something to come through HID (might need to play with block timer)
 	const uint8_t block_ms = 100;
-	auto bytesRead = os_hid_read(hmd->dev, buffer, PACKET_SIZE, block_ms);
+	int bytesRead = os_hid_read(hmd->dev, buffer, PACKET_SIZE, block_ms);
 
 	// Something wrong, shouldn't get negative in normal operating mode.
 	// I think it indicates a disconnection
@@ -469,12 +444,12 @@ arduino_run_thread(void *ptr)
 	struct arduino_parsed_input input; // = {0};
 
 	// wait for a package to sync up, it's discarded but that's okay.
-	if (!arduino_read_one_packet(hmd, buffer, PACKET_SIZE)) {
+	if (!arduino_read_one_packet(hmd, buffer)) {
 		return NULL;
 	}
 
 	then_ns = os_monotonic_get_ns();
-	while (arduino_read_one_packet(hmd, buffer, PACKET_SIZE)) {
+	while (arduino_read_one_packet(hmd, buffer)) {
 
 		// As close to when we get a packet.
 		now_ns = os_monotonic_get_ns();
@@ -502,7 +477,7 @@ arduino_run_thread(void *ptr)
 *	TODO - Complete refactor of the function
 * 		(Breaking it up into bite size pieces and figuring out what it all means and does)
 */
-struct xrt_device *
+struct diy_vr *
 diy_vr_create(struct os_hid_device *dev)
 {
 	// This indicates you won't be using Monado's built-in tracking algorithms.
@@ -550,15 +525,31 @@ diy_vr_create(struct os_hid_device *dev)
 	u_distortion_mesh_set_none(&hmd->base); // Distortion information, fills in xdev->compute_distortion().
 	config_hmd_relation_hist(hmd);			// Config the already initialised HMD pose history buffer.
 
+	// =================================================================================================================
 	// IMU Tracking
 	m_imu_3dof_init(&hmd->fusion, M_IMU_3DOF_USE_GRAVITY_DUR_300MS); //Options are 300MS/20MS don't really know the difference.
-	int ret = os_thread_helper_start(&hmd->imu_thread, arduino_run_thread, hmd);
+
+	int ret = os_thread_helper_init(&hmd->imu_thread);
 	if (ret != 0) {
-		HMD_ERROR(ad, "Failed to start thread!");
+		HMD_ERROR(hmd, "Failed to start imu thread!");
+		diy_vr_destroy(&hmd->base);
+		return 0;
+	}
+	if (hmd->dev) {
+		// Mutex before thread.
+		ret = os_mutex_init(&hmd->lock);
+		if (ret != 0) {
+			HMD_ERROR(hmd, "Failed to init mutex!");
+			diy_vr_destroy(&hmd->base);
+			return NULL;
+		}
+	ret = os_thread_helper_start(&hmd->imu_thread, arduino_run_thread, hmd);
+	if (ret != 0) {
+		HMD_ERROR(hmd, "Failed to start thread!");
 		diy_vr_destroy(&hmd->base);
 		return NULL;
 	}
-
+	// =================================================================================================================
 	// Setup variable tracker: Optional but useful for debugging
 	u_var_add_root(hmd, "Sample HMD", true);
 	u_var_add_log_level(hmd, &hmd->log_level, "log_level");

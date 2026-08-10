@@ -84,21 +84,13 @@ diy_vr_found(struct xrt_prober *xp,
 
 
 /*!
- * Create a auto prober for a Sample HMD.
- *
- * @ingroup drv_diy_vr
- */
-struct xrt_auto_prober *
-diy_vr_create_auto_prober(void);
-
-/*!
  * Create a Sample HMD.
  *
  * This is only exposed so that the prober (in one source file)
  * can call the construction function (in another)
  * @ingroup drv_diy_vr
  */
-struct xrt_device *
+struct diy_vr *
 diy_vr_create(struct os_hid_device *dev);
 
 /*!
