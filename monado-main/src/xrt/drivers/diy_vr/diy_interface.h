@@ -10,6 +10,9 @@
 
 #pragma once
 
+#include "os/os_threading.h"
+#include "math/m_imu_3dof.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -16,11 +16,6 @@ target_include_directories(target_lists PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # Builders
 #
 
-if(XRT_BUILD_DRIVER_DIY_VR)
-	target_sources(target_lists PRIVATE target_builder_diy_vr.c)
-	target_link_libraries(target_lists PRIVATE drv_diy_vr)
-endif()
-
 if(XRT_BUILD_DRIVER_REMOTE)
 	target_sources(target_lists PRIVATE target_builder_remote.c)
 endif()
@@ -80,6 +75,10 @@ endif()
 ###
 # Drivers
 #
+
+if(XRT_BUILD_DRIVER_DIY_VR)
+	target_link_libraries(target_lists PRIVATE drv_diy_vr)
+endif()
 
 if(XRT_BUILD_DRIVER_ARDUINO)
 	target_link_libraries(target_lists PRIVATE drv_arduino)

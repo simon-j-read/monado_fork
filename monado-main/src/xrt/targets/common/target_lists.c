@@ -111,7 +111,6 @@
 #endif
 #endif
 
-
 #ifdef XRT_BUILD_DRIVER_DIY_VR
 #include "diy_vr/diy_interface.h"
 #endif
@@ -172,10 +171,6 @@ xrt_builder_create_func_t target_builder_list[] = {
 #ifdef XRT_BUILD_DRIVER_XREAL_AIR
     xreal_air_builder_create,
 #endif // T_BUILDER_XREAL_AIR
-
-#ifdef T_BUILDER_DIY_VR // High up to override any real hardware.
-    t_builder_diy_vr_create,
-#endif // T_BUILDER_DIY_VR
 
 #ifdef T_BUILDER_LEGACY
     t_builder_legacy_create,
@@ -239,9 +234,8 @@ struct xrt_prober_entry target_entry_list[] = {
 #endif // XRT_BUILD_DRIVER_HDK
 
 #ifdef XRT_BUILD_DRIVER_DIY_VR
-    {DIY_VR_VID, DIY_VR_PID, diy_vr_found, "DIY VR", "diy_vr"}
+    {DIY_VR_VID, DIY_VR_PID, diy_vr_found, "DIY VR", "diy_vr"},
 #endif // XRT_BUILD_DRIVER_DIY_VR
-
 
     {0x0000, 0x0000, NULL, NULL, NULL}, // Terminate
 };

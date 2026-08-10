@@ -375,7 +375,7 @@ arduino_parse_input(struct diy_vr *hmd, void *data, struct arduino_parsed_input 
 
 	// Arduino time since program start (difference from last sample)
 	memcpy(&input->sample.time, &b[24], bytes_4);
-	input->sample.delta = calc_delta_and_handle_rollover(time, hmd->last_time);
+	input->sample.delta = calc_delta_and_handle_rollover(input->sample.time, hmd->last_time);
 	hmd->last_time = input->sample.time;
 
 	// Parsed HID visualisation
@@ -487,10 +487,6 @@ diy_vr_create(struct os_hid_device *dev)
 	struct diy_vr *hmd = U_DEVICE_ALLOCATE(struct diy_vr, flags, 1, 0);
 	hmd->log_level = debug_get_log_option_diy_vr_log();
 
-	if (config_hid(hmd) == FAILURE)	{
-		diy_vr_destroy(&hmd->base);
-		return NULL;
-	}
 	config_hmd_blend_modes(hmd);			// Placing Opaque blend mode in.
 	config_hmd_functions(hmd); 				// Assigning custom functions for inherited HMD->base
 	u_distortion_mesh_set_none(&hmd->base); // Distortion information, fills in xdev->compute_distortion().
@@ -543,16 +539,17 @@ diy_vr_create(struct os_hid_device *dev)
 			diy_vr_destroy(&hmd->base);
 			return NULL;
 		}
-	ret = os_thread_helper_start(&hmd->imu_thread, arduino_run_thread, hmd);
-	if (ret != 0) {
-		HMD_ERROR(hmd, "Failed to start thread!");
-		diy_vr_destroy(&hmd->base);
-		return NULL;
+		ret = os_thread_helper_start(&hmd->imu_thread, arduino_run_thread, hmd);
+		if (ret != 0) {
+			HMD_ERROR(hmd, "Failed to start thread!");
+			diy_vr_destroy(&hmd->base);
+			return NULL;
+		}
 	}
 	// =================================================================================================================
 	// Setup variable tracker: Optional but useful for debugging
 	u_var_add_root(hmd, "Sample HMD", true);
 	u_var_add_log_level(hmd, &hmd->log_level, "log_level");
 
-	return &hmd->base;
+	return hmd;
 }
