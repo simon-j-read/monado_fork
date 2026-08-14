@@ -486,6 +486,7 @@ diy_vr_create(struct os_hid_device *dev)
 
 	struct diy_vr *hmd = U_DEVICE_ALLOCATE(struct diy_vr, flags, 1, 0);
 	hmd->log_level = debug_get_log_option_diy_vr_log();
+	hmd->dev = dev;
 
 	config_hmd_blend_modes(hmd);			// Placing Opaque blend mode in.
 	config_hmd_functions(hmd); 				// Assigning custom functions for inherited HMD->base
@@ -497,9 +498,9 @@ diy_vr_create(struct os_hid_device *dev)
 	// Load config data (saves having to rebuild the project everytime we alter the HMD).
 	// Just putting some dummy values in below before actually loading the JSON in.
 	struct diy_config_data config_data = {
-		.name = "Undefined", .serial = "Undefined", .display_refresh_hz = 60.0,
-		.hFOV_deg = 100.0, .vFOV_deg = 100.0, .hCOP = 0.5, .vCOP = 0.5,
-		.panel_w = 1080, .panel_h = 1080
+		.name = "DIY HMD", .serial = "DIY HMD SERIAL", .display_refresh_hz = 60.0,
+		.hFOV_deg = 80.0, .vFOV_deg = 80.0, .hCOP = 0.5, .vCOP = 0.5,
+		.panel_w = 1440, .panel_h = 1440
 	};
 
 	const char *file_path = "/home/simon/Documents/XR/monado_fork/monado-main/src/xrt/drivers/diy_vr/config.json"; // TODO make this adaptable.
@@ -550,6 +551,9 @@ diy_vr_create(struct os_hid_device *dev)
 	// Setup variable tracker: Optional but useful for debugging
 	u_var_add_root(hmd, "Sample HMD", true);
 	u_var_add_log_level(hmd, &hmd->log_level, "log_level");
+
+
+	// Got devices:
 
 	return hmd;
 }

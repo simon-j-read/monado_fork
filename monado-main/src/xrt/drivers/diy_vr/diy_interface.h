@@ -16,6 +16,7 @@
 #include "os/os_threading.h"
 #include "math/m_imu_3dof.h"
 #include "math/m_relation_history.h"
+#include "util/u_logging.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -45,7 +46,7 @@ extern "C" {
 
 // VID & PID Values for the Arduino HID, will need to be changed for your respective
 // arduino.
-#define DIY_VR_VID 0x2431
+#define DIY_VR_VID 0x2341
 #define DIY_VR_PID 0x8036
 #define ARDUINO_IFACE 2 // May need to run "monado-cli test" to see what the iface is.
 

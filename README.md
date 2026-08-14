@@ -24,6 +24,13 @@ Developed on:
 2. Print 3d files, see Table ??
 3. Assemble HMD
 3. Load Arduino software (RawHID.ino)
+   4. Configure HID permissions on the local computer 
+   5. echo 'SUBSYSTEM=="hidraw", ATTRS{idVendor}=="YOUR_VENDOR_ID", ATTRS{idProduct}=="YOUR_PRODUCT_ID", MODE="0666"' | sudo tee /etc/udev/rules.d/99-diy-vr.rules
+   6. sudo udevadm control --reload-rules
+      sudo udevadm trigger
+   7. Can unplug device, then replug device, then run
+   8. ls -l /dev/hidraw*
+   9. check for crw-rw-rw for read write permissions (can't run monado as sudo)
 4. Configure the Monado
    5. VID (target_lists.c), PID, X11 (configuration script), USB permissions
 5. Build this project's Monado

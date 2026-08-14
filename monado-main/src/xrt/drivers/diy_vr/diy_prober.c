@@ -1,5 +1,8 @@
 // Copyright 2020-2024, Collabora, Ltd.
 // SPDX-License-Identifier: BSL-1.0
+
+
+// u_system_devices_static_finalize
 /*!
  * @file
  * @brief  Found function for diy vr headset based off hdk_prober.c
@@ -11,6 +14,7 @@
 
 #include "util/u_misc.h"
 #include "util/u_debug.h"
+#include "util/u_logging.h"
 
 #include "diy_interface.h"
 
@@ -21,6 +25,9 @@ diy_vr_found(struct xrt_prober *xp,
 		  size_t index,
 		  cJSON *attached_data,
 		  struct xrt_device **out_xdev) {
+
+	U_LOG_T("%s - !!!!!!! Entered diy vr found function", __func__);
+	printf("Entered diy_vr_found");
 
 	struct xrt_prober_device *dev = devices[index];
 
