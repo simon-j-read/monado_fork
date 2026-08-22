@@ -95,14 +95,14 @@ void loop() {
   //   megabuff[i] = i;
   // }
 
-  uint8_t megabuff[100];
+  uint8_t megabuff[sizeof(packet)];
   memcpy(megabuff, &packet, sizeof(packet));
 
   RawHID.write(megabuff, sizeof(megabuff));
   digitalWrite(pinLed, LOW);
   // Simple debounce
-  Serial.println("looped");
-  delay(300);
+  // Serial.println("looped");
+  // delay(300);
 
 
   

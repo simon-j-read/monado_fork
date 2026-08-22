@@ -12,6 +12,8 @@
  * @ingroup drv_diy_vr
  */
 
+// VK_FORMAT_B8G8R8A8_UNORM
+
 #include "math/m_relation_history.h"
 #include "math/m_api.h"
 #include "math/m_mathinclude.h" // IWYU pragma: keep
@@ -41,6 +43,14 @@
 
 #define SUCCESS 1
 #define FAILURE 0
+
+// Should implement these in a more "C" way
+enum ARDUINO_PACKET {
+	ARDUINO_PACKET_READ_ERROR,
+	ARDUINO_PACKET_READ_OKAY,
+	ARDUINO_PACKET_NOT_FULL
+};
+
 
 /*!
  * A parsed sample of accel and gyro.
@@ -76,20 +86,6 @@ DEBUG_GET_ONCE_LOG_OPTION(diy_vr_log, "DIY_VR_LOG", U_LOGGING_WARN)
 #define HMD_ERROR(hmd, ...) U_LOG_XDEV_IFL_E(&hmd->base, hmd->log_level, __VA_ARGS__)
 
 
-static uint32_t
-calc_delta_and_handle_rollover(uint32_t next, uint32_t last)
-{
-	uint32_t tick_delta = next - last;
-
-	// The 24-bit tick counter has rolled over,
-	// adjust the "negative" value to be positive.
-	if (tick_delta > 0xffffff) {
-		tick_delta += 0x1000000;
-	}
-
-	return tick_delta;
-}
-
 static void
 diy_vr_destroy(struct xrt_device *xdev)
 {
@@ -108,6 +104,11 @@ diy_vr_destroy(struct xrt_device *xdev)
 	m_imu_3dof_close(&hmd->fusion);
 
 	m_relation_history_destroy(&hmd->relation_hist);
+
+	if (hmd->dev != NULL) {
+		os_hid_destroy(hmd->dev);
+		hmd->dev = NULL;
+	}
 
 	u_device_free(&hmd->base);
 }
@@ -145,13 +146,14 @@ diy_vr_get_tracked_pose(struct xrt_device *xdev,
 		return XRT_ERROR_INPUT_UNSUPPORTED;
 	}
 
-
 	os_mutex_lock(&hmd->lock);
 
 	out_relation->pose.orientation = hmd->fusion.rot;
 	math_quat_normalize(&out_relation->pose.orientation); // should this happen?
-
 	os_mutex_unlock(&hmd->lock);
+
+	out_relation->relation_flags = (enum xrt_space_relation_flags)(XRT_SPACE_RELATION_ORIENTATION_VALID_BIT |
+																   XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT);
 
 	return XRT_SUCCESS;
 }
@@ -281,6 +283,7 @@ config_hmd_display(struct diy_vr *hmd, struct diy_config_data *cd)
 	hmd->base.hmd->screens[0].w_pixels = cd->panel_w * 2;	// Have 2 panels, but treated as a single screen by Monado
 	hmd->base.hmd->screens[0].h_pixels = cd->panel_h;		// Single "screen" (always the case), hence [0] index.
 
+
 	// Left, Right
 	for (uint8_t eye = 0; eye < 2; ++eye) {
 		hmd->base.hmd->views[eye].display.w_pixels = cd->panel_w;	// Display
@@ -334,14 +337,14 @@ update_fusion(struct diy_vr *hmd,
 
 	m_imu_3dof_update(&hmd->fusion, timestamp_ns, &sample->accel, &sample->gyro);
 
-	double delta_device_ms = (double)sample->delta / 1000.0;
+	double delta_device_ms = (double)sample->delta;
 	double delta_host_ms = (double)delta_ns / (1000.0 * 1000.0);
 	HMD_DEBUG(hmd, "%+fms %+fms", delta_host_ms, delta_device_ms);
 	HMD_DEBUG(hmd, "fusion sample %u (ax %.3f ay %.3f az %.3f) (gx %.3f gy %.3f gz %.3f)",
 			  sample->time,
 			  sample->accel.x, sample->accel.y, sample->accel.z,
 			  sample->gyro.x, sample->gyro.y, sample->gyro.z);
-	HMD_DEBUG(hmd, " ");
+
 }
 
 
@@ -351,17 +354,18 @@ update_fusion(struct diy_vr *hmd,
 static void
 arduino_parse_input(struct diy_vr *hmd, void *data, struct arduino_parsed_input *input)
 {
+
 	U_ZERO(input);
 	const int bytes_4 = 4;
 	unsigned char *b = (unsigned char *)data;
-	// Raw HID visualisation
-	HMD_TRACE(hmd,
-				  "raw input: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
-				  "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
-				  "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
-				  b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14],
-				  b[15], b[16], b[17], b[18], b[19], b[20], b[21], b[22], b[23], b[24], b[25], b[26], b[27], b[28],
-				  b[29], b[30], b[31], b[32], b[33], b[34], b[35]);
+	// // Raw HID visualisation
+	// HMD_TRACE(hmd,
+	// 			  "raw input: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
+	// 			  "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
+	// 			  "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+	// 			  b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14],
+	// 			  b[15], b[16], b[17], b[18], b[19], b[20], b[21], b[22], b[23], b[24], b[25], b[26], b[27], b[28],
+	// 			  b[29], b[30], b[31], b[32], b[33], b[34], b[35]);
 
 	// Accelerations
 	memcpy(&input->sample.accel.x, &b[0], bytes_4);
@@ -375,7 +379,7 @@ arduino_parse_input(struct diy_vr *hmd, void *data, struct arduino_parsed_input 
 
 	// Arduino time since program start (difference from last sample)
 	memcpy(&input->sample.time, &b[24], bytes_4);
-	input->sample.delta = calc_delta_and_handle_rollover(input->sample.time, hmd->last_time);
+	input->sample.delta = hmd->last_time - input->sample.time;
 	hmd->last_time = input->sample.time;
 
 	// Parsed HID visualisation
@@ -392,39 +396,44 @@ arduino_parse_input(struct diy_vr *hmd, void *data, struct arduino_parsed_input 
  * 
  * Read data goes into "buffer" which will be parsed outside this function.
  */
-static bool
+static int
 arduino_read_one_packet(struct diy_vr *hmd, uint8_t *buffer)
 {
-	// Wait for something to come through HID (might need to play with block timer)
-	const uint8_t block_ms = 100;
-	int bytesRead = os_hid_read(hmd->dev, buffer, PACKET_SIZE, block_ms);
+	const uint8_t max_poll_ms = 100;
+	int bytesRead = 0;
+	bool first = true;
+	bool got_packet = false;
 
-	// Something wrong, shouldn't get negative in normal operating mode.
-	// I think it indicates a disconnection
-	if (bytesRead < 0) {
-		if (!hmd->disconnect_notified) {
-			HMD_ERROR(hmd, "Negative bytes read from HID, not good. Arduino disconnected?");
-			hmd->disconnect_notified = true;
+	while (true) {
+		// First call polls the device up to max_poll_ms waiting for data.
+		// Later calls just drain (0 polls).
+		bytesRead = os_hid_read(hmd->dev, buffer, PACKET_SIZE, first ? max_poll_ms : 0);
+		first = false;
+
+		// Something wrong, shouldn't get negative in normal operating mode.
+		// I think it indicates a disconnection
+		if (bytesRead < 0) {
+			if (!hmd->disconnect_notified) {
+				HMD_ERROR(hmd, "Negative bytes read from HID, not good. Arduino disconnected?");
+				hmd->disconnect_notified = true;
+			}
+			return ARDUINO_PACKET_READ_ERROR;
 		}
-		return FAILURE;
-
-	// No data in HID buffer even after waiting, won't update pose this time.
-	// Might need to adjust Arduino output if this happens too often.
-	} else if (bytesRead == 0) {
-		HMD_WARN(hmd, "Read 0 bytes from device");
-		return SUCCESS;
-	}
-	// Now that something is in the buffer, loop through till you get the lastest packet.
-	// Will exit loop with latest packets saved into bytesread.
-	while (bytesRead > 0) {
+		if (bytesRead == 0) {
+			break; // No more data queued.
+		}
 		if (bytesRead != PACKET_SIZE) {
 			HMD_DEBUG(hmd, "Only got %d bytes", bytesRead);
-			return SUCCESS;
+			return ARDUINO_PACKET_NOT_FULL;
 		}
-		bytesRead = os_hid_read(hmd->dev, buffer, PACKET_SIZE, 0); // Block 0, means 0 polls.
+		got_packet = true;
+	}
+	if (!got_packet) {
+		HMD_WARN(hmd, "Read 0 bytes from device");
+		return ARDUINO_PACKET_NOT_FULL;
 	}
 
-	return SUCCESS;
+	return ARDUINO_PACKET_READ_OKAY;
 }
 
 
@@ -444,29 +453,31 @@ arduino_run_thread(void *ptr)
 	struct arduino_parsed_input input; // = {0};
 
 	// wait for a package to sync up, it's discarded but that's okay.
-	if (!arduino_read_one_packet(hmd, buffer)) {
+	if (arduino_read_one_packet(hmd, buffer) == ARDUINO_PACKET_READ_ERROR) {
 		return NULL;
 	}
 
 	then_ns = os_monotonic_get_ns();
-	while (arduino_read_one_packet(hmd, buffer)) {
+	while (true) {
+		int result = arduino_read_one_packet(hmd, buffer);
 
-		// As close to when we get a packet.
-		now_ns = os_monotonic_get_ns();
+		if (result == ARDUINO_PACKET_READ_ERROR) {
+			break; // Disconnected; exit thread.
+		}
+		if (result == ARDUINO_PACKET_NOT_FULL) {
+			continue; // No full packet this round; the internal 100ms poll already paced us.
+		}
 
-		// Parse the data we got.
-		arduino_parse_input(hmd, buffer, &input);
+		// ARDUINO_PACKET_READ_OKAY
+		now_ns = os_monotonic_get_ns();			  // As close to when we get a packet.
+		arduino_parse_input(hmd, buffer, &input); // Parse the data we got.
 
 		time_duration_ns delta_ns = now_ns - then_ns;
 		then_ns = now_ns;
 
-		// Lock last and the fusion.
+		// Lock out, update fusion, return lock.
 		os_mutex_lock(&hmd->lock);
-
-		// Process the parsed data.
 		update_fusion(hmd, &input.sample, now_ns, delta_ns);
-
-		// Now done.
 		os_mutex_unlock(&hmd->lock);
 	}
 	return NULL;
@@ -503,9 +514,9 @@ diy_vr_create(struct os_hid_device *dev)
 		.panel_w = 1440, .panel_h = 1440
 	};
 
-	const char *file_path = "/home/simon/Documents/XR/monado_fork/monado-main/src/xrt/drivers/diy_vr/config.json"; // TODO make this adaptable.
-	const cJSON *config_json = read_config_file(file_path); // Interpret file into a JSON format
-	extract_config_data(&config_data, config_json);
+	// const char *file_path = "/home/simon/Documents/XR/monado_fork/monado-main/src/xrt/drivers/diy_vr/config.json"; // TODO make this adaptable.
+	// const cJSON *config_json = read_config_file(file_path); // Interpret file into a JSON format
+	// extract_config_data(&config_data, config_json);
 
 	snprintf(hmd->base.str, XRT_DEVICE_NAME_LEN, "%s", config_data.name);	// Assigning names to base.str & base.serial
 	snprintf(hmd->base.serial, XRT_DEVICE_NAME_LEN, "%s", config_data.serial);
